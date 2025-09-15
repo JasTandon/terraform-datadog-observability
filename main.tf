@@ -10,7 +10,7 @@ resource "datadog_dashboard_json" "this" {
 # Monitors (alarms)
 ########################################
 resource "datadog_monitor" "this" {
-  for_each            = { for m in var.monitors : m.name => m }
+  for_each = { for m in var.monitors : m.name => m }
 
   name                = each.value.name
   type                = each.value.type
@@ -25,14 +25,15 @@ resource "datadog_monitor" "this" {
   require_full_window = try(each.value.require_full_window, true)
   evaluation_delay    = try(each.value.evaluation_delay, null)
 
-  dynamic "thresholds" {
+  # Alert thresholds of the monitor
+  dynamic "monitor_thresholds" {
     for_each = each.value.thresholds == null ? [] : [each.value.thresholds]
     content {
-      critical          = try(thresholds.value.critical, null)
-      warning           = try(thresholds.value.warning, null)
-      critical_recovery = try(thresholds.value.critical_recovery, null)
-      warning_recovery  = try(thresholds.value.warning_recovery, null)
-      ok                = try(thresholds.value.ok, null)
+      critical          = try(monitor_thresholds.value.critical, null)
+      warning           = try(monitor_thresholds.value.warning, null)
+      critical_recovery = try(monitor_thresholds.value.critical_recovery, null)
+      warning_recovery  = try(monitor_thresholds.value.warning_recovery, null)
+      ok                = try(monitor_thresholds.value.ok, null)
     }
   }
 }
@@ -43,10 +44,10 @@ resource "datadog_monitor" "this" {
 resource "datadog_synthetics_test" "this" {
   for_each = { for s in var.synthetics : s.name => s }
 
-  type    = each.value.type       # "api"
-  subtype = each.value.subtype    # "http"
-  name    = each.value.name
-  tags    = try(each.value.tags, [])
+  type      = each.value.type    # "api"
+  subtype   = each.value.subtype # "http", "ssl", "tcp", etc.
+  name      = each.value.name
+  tags      = try(each.value.tags, [])
   locations = each.value.locations
   status    = "live"
 
@@ -58,9 +59,9 @@ resource "datadog_synthetics_test" "this" {
   request_headers = try(each.value.request_headers, {})
 
   options_list {
-    tick_every         = try(each.value.tick_every, 300)
-    min_location_failed= try(each.value.min_location_failed, 1)
-    follow_redirects   = try(each.value.follow_redirects, true)
+    tick_every          = try(each.value.tick_every, 300)
+    min_location_failed = try(each.value.min_location_failed, 1)
+    follow_redirects    = try(each.value.follow_redirects, true)
 
     dynamic "retry" {
       for_each = try(each.value.retry, null) == null ? [] : [each.value.retry]
@@ -85,7 +86,7 @@ resource "datadog_synthetics_test" "this" {
 # Logs — Indexes
 ########################################
 resource "datadog_logs_index" "this" {
-  for_each       = { for i in var.log_indexes : i.name => i }
+  for_each = { for i in var.log_indexes : i.name => i }
 
   name           = each.value.name
   daily_limit    = try(each.value.daily_limit, null)
@@ -108,34 +109,26 @@ resource "datadog_logs_metric" "this" {
   name = each.value.name
 
   compute {
-    aggregation = each.value.compute_aggregation
+    # "count" or "distribution"
+    aggregation_type = each.value.compute_aggregation
+    # required when aggregation_type = "distribution"
+    path = try(each.value.compute_path, null)
+    # optional, only for "distribution"
+    include_percentiles = try(each.value.include_percentiles, null)
   }
 
   dynamic "filter" {
     for_each = try(each.value.filter_query, null) == null ? [] : [each.value.filter_query]
-    content {
-      query = filter.value
-    }
+    content { query = filter.value }
   }
 
   dynamic "group_by" {
     for_each = try(each.value.group_bys, [])
     content {
-      path = group_by.value.path
+      path     = group_by.value.path
+      tag_name = group_by.value.tag_name
     }
   }
-}
-
-########################################
-# Optional: Datadog ↔ AWS Integration (Datadog side)
-########################################
-resource "datadog_integration_aws_account" "this" {
-  account_id = var.aws_integration.account_id
-  role_name  = var.aws_integration.role_name
-
-  # optional fields vary by provider version (regions, namespace rules, etc.)
-  filter_tags = try(var.aws_integration.filter_tags, [])
-  host_tags   = try(var.aws_integration.host_tags, [])
 }
 
 ############################################################
@@ -155,44 +148,33 @@ resource "datadog_synthetics_global_variable" "this" {
   for_each    = { for v in var.synthetics_global_variables : v.name => v }
   name        = each.value.name
   description = try(each.value.description, null)
-
-  # Either set a static value...
-  value = try(each.value.value, null)
-
-  # ...or parse from a test (if provided)
-  dynamic "parse_test_options" {
-    for_each = try(each.value.parse_test) != null ? [each.value.parse_test] : []
-    content {
-      type  = parse_test_options.value.type     # "raw" | "json_path" | "regex" | "x_path"
-      value = try(parse_test_options.value.value, null)
-    }
-  }
-  parse_test_id = try(each.value.parse_test.id, null)
+  value       = try(each.value.value, null)
+  secure      = try(each.value.secure, null)
+  tags        = try(each.value.tags, null)
 }
 
 # Browser tests
 resource "datadog_synthetics_test" "browser" {
   for_each = { for t in var.synthetics_browser_tests : t.name => t }
 
-  name       = each.value.name
-  type       = "browser"
-  subtype    = "browser"
-  status     = coalesce(try(each.value.status, null), "live")
-  tags       = try(each.value.tags, null)
-  locations  = coalesce(try(each.value.locations, null), ["aws:us-east-1"])
+  name = each.value.name
+  type = "browser"
+  # IMPORTANT: no subtype for browser tests
+  status    = coalesce(try(each.value.status, null), "live")
+  tags      = try(each.value.tags, null)
+  locations = coalesce(try(each.value.locations, null), ["aws:us-east-1"])
 
-  # Starting URL for the browser test
+  # required for browser tests
+  device_ids = coalesce(try(each.value.device_ids, null), ["laptop_large"])
+
   request_definition {
     method = "GET"
     url    = each.value.start_url
   }
 
-  # Options
   options_list {
-    tick_every = coalesce(try(each.value.tick_every, null), 900)
-
-    # For browser tests device_ids belong in options_list
-    device_ids = coalesce(try(each.value.device_ids, null), ["laptop_large"])
+    tick_every          = coalesce(try(each.value.tick_every, null), 900)
+    min_location_failed = coalesce(try(each.value.min_location_failed, null), 1)
 
     dynamic "retry" {
       for_each = try(each.value.retry) != null ? [each.value.retry] : []
@@ -201,83 +183,49 @@ resource "datadog_synthetics_test" "browser" {
         interval = try(retry.value.interval, null)
       }
     }
-
-    dynamic "monitor_options" {
-      for_each = try(each.value.monitor_options) != null ? [each.value.monitor_options] : []
-      content {
-        renotify_interval  = try(monitor_options.value.renotify_interval, null)
-        escalation_message = try(monitor_options.value.escalation_message, null)
-        notify_audit       = try(monitor_options.value.notify_audit, null)
-        notify_no_data     = try(monitor_options.value.notify_no_data, null)
-        no_data_timeframe  = try(monitor_options.value.no_data_timeframe, null)
-        include_tags       = try(monitor_options.value.include_tags, null)
-        require_full_window = try(monitor_options.value.require_full_window, null)
-        new_group_delay    = try(monitor_options.value.new_group_delay, null)
-        evaluation_delay   = try(monitor_options.value.evaluation_delay, null)
-        timeout_h          = try(monitor_options.value.timeout_h, null)
-      }
-    }
   }
 
-  # Local/browser variables (text, email, global via id, etc.)
-  dynamic "browser_variable" {
+  # Optional config variables (no "value" field here)
+  dynamic "config_variable" {
     for_each = try(each.value.config_variables, [])
     content {
-      type    = browser_variable.value.type          # "text" | "email" | "global" | ...
-      name    = browser_variable.value.name
-      id      = try(browser_variable.value.id, null) # required if type="global"
-      value   = try(browser_variable.value.value, null)
-      secure  = try(browser_variable.value.secure, false)
-      example = try(browser_variable.value.example, null)
-      pattern = try(browser_variable.value.pattern, null)
-    }
-  }
-
-  # Steps
-  dynamic "browser_step" {
-    for_each = try(each.value.steps, [])
-    content {
-      type          = browser_step.value.type
-      name          = try(browser_step.value.name, null)
-      params        = try(browser_step.value.params, null)        # map(any) — matches Datadog step schema
-      allow_failure = try(browser_step.value.allow_failure, null)
-      is_critical   = try(browser_step.value.is_critical, null)
-      timeout       = try(browser_step.value.timeout, null)
-      no_screenshot = try(browser_step.value.no_screenshot, null)
+      type    = config_variable.value.type
+      name    = config_variable.value.name
+      id      = try(config_variable.value.id, null) # required if type="global"
+      secure  = try(config_variable.value.secure, null)
+      example = try(config_variable.value.example, null)
+      pattern = try(config_variable.value.pattern, null)
     }
   }
 }
 
 ############################################################
-# DOWNTIME(S)
-# Note: datadog_downtime_schedule is the modern resource; the legacy
-#       datadog_downtime is simpler. Enable either via variables.
+# ✅ Downtimes (new resource; replaces deprecated datadog_downtime)
+#    Builds one-time schedules from legacy epoch inputs.
 ############################################################
-
-# Simple/legacy downtimes (start/end epoch seconds)
-resource "datadog_downtime" "this" {
+resource "datadog_downtime_schedule" "from_legacy" {
   for_each = { for d in var.legacy_downtimes : d.name => d }
 
-  scope   = each.value.scope              # list(string), e.g. ["env:prod"] or ["*"]
-  message = try(each.value.message, null)
-  start   = each.value.start              # epoch seconds
-  end     = try(each.value.end, null)     # epoch seconds (optional)
+  message          = try(each.value.message, null)
+  display_timezone = null
+  scope            = try(each.value.scope, null)
 
-  dynamic "recurrence" {
-    for_each = try(each.value.recurrence) != null ? [each.value.recurrence] : []
-    content {
-      type               = recurrence.value.type        # "days" | "weeks" | "months" | "years"
-      period             = recurrence.value.period
-      week_days          = try(recurrence.value.week_days, null)
-      until_date         = try(recurrence.value.until_date, null)
-      until_occurrences  = try(recurrence.value.until_occurrences, null)
-    }
+  # REQUIRED in current provider versions:
+  # Use all monitors (for the given scope) by default.
+  monitor_identifier {
+    monitor_tags = ["*"]
+  }
+
+  one_time_schedule {
+    # Convert epoch seconds to RFC3339 with UTC offset using timeadd()
+    start = timeadd("1970-01-01T00:00:00Z", format("%ds", each.value.start))
+    end   = try(each.value.end, null) != null ? timeadd("1970-01-01T00:00:00Z", format("%ds", each.value.end)) : null
   }
 }
 
 # (Optional) Monitor Config Policies — tag policies enforcement
 resource "datadog_monitor_config_policy" "this" {
-  for_each   = { for p in var.monitor_config_policies : p.name => p }
+  for_each    = { for p in var.monitor_config_policies : p.name => p }
   policy_type = "tag"
 
   tag_policy {
@@ -290,11 +238,10 @@ resource "datadog_monitor_config_policy" "this" {
 ############################################################
 # SLOs
 ############################################################
-
 resource "datadog_service_level_objective" "this" {
   for_each    = { for s in var.slos : s.name => s }
   name        = each.value.name
-  type        = each.value.type                 # "metric" | "monitor"
+  type        = each.value.type # "metric" | "monitor"
   description = try(each.value.description, null)
   tags        = try(each.value.tags, null)
 
@@ -314,7 +261,7 @@ resource "datadog_service_level_objective" "this" {
   dynamic "thresholds" {
     for_each = try(each.value.thresholds, [])
     content {
-      timeframe = thresholds.value.timeframe   # "7d" | "30d" | "90d" | "week" | "month" | ...
+      timeframe = thresholds.value.timeframe # "7d" | "30d" | "90d" | "week" | "month" | ...
       target    = thresholds.value.target
       warning   = try(thresholds.value.warning, null)
     }
@@ -324,93 +271,71 @@ resource "datadog_service_level_objective" "this" {
 ############################################################
 # METRICS: Metadata + Tag Config
 ############################################################
-
-# Metric metadata (units, description, etc.)
 resource "datadog_metric_metadata" "this" {
-  for_each    = { for m in var.metric_metadata : m.metric => m }
-  metric      = each.value.metric
-  description = try(each.value.description, null)
-  unit        = try(each.value.unit, null)
-  short_name  = try(each.value.short_name, null)
-  per_unit    = try(each.value.per_unit, null)
-  type        = try(each.value.type, null)            # "count" | "gauge" | "rate" | "distribution" (update limitations apply)
+  for_each        = { for m in var.metric_metadata : m.metric => m }
+  metric          = each.value.metric
+  description     = try(each.value.description, null)
+  unit            = try(each.value.unit, null)
+  short_name      = try(each.value.short_name, null)
+  per_unit        = try(each.value.per_unit, null)
+  type            = try(each.value.type, null) # "count" | "gauge" | "rate" | "distribution"
   statsd_interval = try(each.value.statsd_interval, null)
 }
 
-# Metric tag configuration (queryable tags, aggregations, percentiles)
 resource "datadog_metric_tag_configuration" "this" {
-  for_each           = { for c in var.metric_tag_config : c.metric_name => c }
-  metric_name        = each.value.metric_name
-  metric_type        = each.value.metric_type         # "gauge" | "count" | "rate" | "distribution"
-  tags               = try(each.value.tags, null)
+  for_each            = { for c in var.metric_tag_config : c.metric_name => c }
+  metric_name         = each.value.metric_name
+  metric_type         = each.value.metric_type # "gauge" | "count" | "rate" | "distribution"
+  tags                = try(each.value.tags, null)
   include_percentiles = try(each.value.include_percentiles, null)
   exclude_tags_mode   = try(each.value.exclude_tags_mode, null)
 
   dynamic "aggregations" {
     for_each = try(each.value.aggregations, [])
     content {
-      time  = try(aggregations.value.time, null)      # e.g., "avg","sum","min","max"
-      space = try(aggregations.value.space, null)     # e.g., "avg","sum","min","max"
+      time  = try(aggregations.value.time, null)  # e.g., "avg","sum","min","max"
+      space = try(aggregations.value.space, null) # e.g., "avg","sum","min","max"
     }
   }
 }
 
 ############################################################
-# LOGS: Archives + Pipelines (+ ordering)
+# LOGS: Archives (+ ordering)
 ############################################################
-
-# Logs Archives (supports S3 / Azure / GCS)
 resource "datadog_logs_archive" "this" {
   for_each = { for a in var.logs_archives : a.name => a }
 
   name  = each.value.name
   query = try(each.value.query, null)
 
-  include_tags                = try(each.value.include_tags, null)
+  include_tags                    = try(each.value.include_tags, null)
   rehydration_max_scan_size_in_gb = try(each.value.rehydration_max_scan_size_in_gb, null)
-  rehydration_tags            = try(each.value.rehydration_tags, null)
+  rehydration_tags                = try(each.value.rehydration_tags, null)
 
-  # S3
+  # S3 destination
   dynamic "s3_archive" {
     for_each = try(each.value.s3) != null ? [each.value.s3] : []
     content {
-      bucket             = s3_archive.value.bucket
-      path               = try(s3_archive.value.path, null)
-      account_id         = try(s3_archive.value.account_id, null)
-      role_name          = try(s3_archive.value.role_name, null)
-      iam_role_arn       = try(s3_archive.value.iam_role_arn, null) # alternative to account_id+role_name
-      kms_key_arn        = try(s3_archive.value.kms_key_arn, null)
-      storage_class      = try(s3_archive.value.storage_class, null) # e.g., "STANDARD_IA"
+      bucket     = s3_archive.value.bucket
+      path       = try(s3_archive.value.path, null)
+      account_id = s3_archive.value.account_id
+      role_name  = s3_archive.value.role_name
     }
   }
 
-  # Azure
+  # Azure destination
   dynamic "azure_archive" {
     for_each = try(each.value.azure) != null ? [each.value.azure] : []
     content {
-      container         = azure_archive.value.container
-      storage_account   = azure_archive.value.storage_account
-      tenant_id         = try(azure_archive.value.tenant_id, null)
-      client_id         = try(azure_archive.value.client_id, null)
-      client_secret     = try(azure_archive.value.client_secret, null)
-      path              = try(azure_archive.value.path, null)
-    }
-  }
-
-  # GCS
-  dynamic "gcs_archive" {
-    for_each = try(each.value.gcs) != null ? [each.value.gcs] : []
-    content {
-      bucket   = gcs_archive.value.bucket
-      path     = try(gcs_archive.value.path, null)
-      client_email = try(gcs_archive.value.client_email, null)
-      project_id   = try(gcs_archive.value.project_id, null)
-      private_key  = try(gcs_archive.value.private_key, null)
+      container       = azure_archive.value.container
+      storage_account = azure_archive.value.storage_account
+      client_id       = azure_archive.value.client_id
+      tenant_id       = try(azure_archive.value.tenant_id, null)
+      path            = try(azure_archive.value.path, null)
     }
   }
 }
 
-# Optional: control global archive order
 resource "datadog_logs_archive_order" "this" {
   count = length(var.logs_archive_order) > 0 ? 1 : 0
   archive_ids = [
@@ -418,12 +343,15 @@ resource "datadog_logs_archive_order" "this" {
   ]
 }
 
-# Logs Custom Pipelines (generic shape; add processors as needed)
+############################################################
+# LOGS: Custom Pipelines (+ order)
+############################################################
 resource "datadog_logs_custom_pipeline" "this" {
   for_each   = { for p in var.logs_custom_pipelines : p.name => p }
   name       = each.value.name
   is_enabled = coalesce(try(each.value.is_enabled, null), true)
 
+  # optional filter
   dynamic "filter" {
     for_each = try(each.value.filter) != null ? [each.value.filter] : []
     content {
@@ -431,20 +359,22 @@ resource "datadog_logs_custom_pipeline" "this" {
     }
   }
 
-  # Example of enabling common processor kinds dynamically (extend as needed)
+  # one or more processors
   dynamic "processor" {
     for_each = try(each.value.processors, [])
     content {
-      type       = processor.value.type        # e.g., "grok-parser", "date-remapper", "status-remapper", "attribute-remapper", ...
-      name       = try(processor.value.name, null)
-      is_enabled = coalesce(try(processor.value.is_enabled, null), true)
-
       # GROK Parser
       dynamic "grok_parser" {
         for_each = can(processor.value.grok_parser) ? [processor.value.grok_parser] : []
         content {
-          match_rules   = grok_parser.value.match_rules
-          support_rules = try(grok_parser.value.support_rules, null)
+          source     = try(grok_parser.value.source, "message")
+          name       = try(grok_parser.value.name, null)
+          is_enabled = coalesce(try(grok_parser.value.is_enabled, null), true)
+
+          grok {
+            match_rules   = grok_parser.value.match_rules
+            support_rules = try(grok_parser.value.support_rules, null)
+          }
         }
       }
 
@@ -452,8 +382,9 @@ resource "datadog_logs_custom_pipeline" "this" {
       dynamic "date_remapper" {
         for_each = can(processor.value.date_remapper) ? [processor.value.date_remapper] : []
         content {
-          sources = date_remapper.value.sources
-          target  = try(date_remapper.value.target, null)
+          sources    = date_remapper.value.sources
+          name       = try(date_remapper.value.name, null)
+          is_enabled = coalesce(try(date_remapper.value.is_enabled, null), true)
         }
       }
 
@@ -461,7 +392,9 @@ resource "datadog_logs_custom_pipeline" "this" {
       dynamic "status_remapper" {
         for_each = can(processor.value.status_remapper) ? [processor.value.status_remapper] : []
         content {
-          sources = status_remapper.value.sources
+          sources    = status_remapper.value.sources
+          name       = try(status_remapper.value.name, null)
+          is_enabled = coalesce(try(status_remapper.value.is_enabled, null), true)
         }
       }
 
@@ -469,42 +402,38 @@ resource "datadog_logs_custom_pipeline" "this" {
       dynamic "attribute_remapper" {
         for_each = can(processor.value.attribute_remapper) ? [processor.value.attribute_remapper] : []
         content {
-          sources               = attribute_remapper.value.sources
-          source_type           = try(attribute_remapper.value.source_type, null)
-          target                = try(attribute_remapper.value.target, null)
-          target_type           = try(attribute_remapper.value.target_type, null)
-          preserve_source       = try(attribute_remapper.value.preserve_source, null)
-          override_on_conflict  = try(attribute_remapper.value.override_on_conflict, null)
-          replace_missing       = try(attribute_remapper.value.replace_missing, null)
-          ignore_missing        = try(attribute_remapper.value.ignore_missing, null)
+          sources              = attribute_remapper.value.sources
+          source_type          = try(attribute_remapper.value.source_type, null)
+          target               = try(attribute_remapper.value.target, null)
+          target_type          = try(attribute_remapper.value.target_type, null)
+          preserve_source      = try(attribute_remapper.value.preserve_source, null)
+          override_on_conflict = try(attribute_remapper.value.override_on_conflict, null)
+          name                 = try(attribute_remapper.value.name, null)
+          is_enabled           = coalesce(try(attribute_remapper.value.is_enabled, null), true)
         }
       }
     }
   }
 }
 
-# Optional: global pipeline order (top to bottom)
 resource "datadog_logs_pipeline_order" "this" {
-  count = length(var.logs_pipeline_order) > 0 ? 1 : 0
-  pipeline_ids = [
-    for name in var.logs_pipeline_order : datadog_logs_custom_pipeline.this[name].id
-  ]
+  count     = length(var.logs_pipeline_order) > 0 ? 1 : 0
+  name      = "global-order"
+  pipelines = var.logs_pipeline_order
 }
 
 ############################################################
 # DASHBOARD LISTS
 ############################################################
-
 resource "datadog_dashboard_list" "this" {
   for_each = { for l in var.dashboard_lists : l.name => l }
   name     = each.value.name
 
-  # Optionally attach dashboards into each list
   dynamic "dash_item" {
     for_each = try(each.value.dash_items, [])
     content {
-      dash_id = dash_item.value.dash_id  # ID of an existing datadog_dashboard / datadog_dashboard_json
-      type    = try(dash_item.value.type, null)  # often optional/ignored
+      dash_id = dash_item.value.dash_id
+      type    = try(dash_item.value.type, null)
     }
   }
 }

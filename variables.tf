@@ -16,24 +16,24 @@ List of Datadog monitors (alarms).
 - thresholds (object: critical, warning, critical_recovery, warning_recovery, ok)
 EOT
   type = list(object({
-    name                 = string
-    type                 = string
-    query                = string
-    message              = string
-    tags                 = optional(list(string), [])
-    priority             = optional(number)
-    notify_no_data       = optional(bool, false)
-    no_data_timeframe    = optional(number)
-    renotify_interval    = optional(number)
-    include_tags         = optional(bool, true)
-    require_full_window  = optional(bool, true)
-    evaluation_delay     = optional(number)
+    name                = string
+    type                = string
+    query               = string
+    message             = string
+    tags                = optional(list(string), [])
+    priority            = optional(number)
+    notify_no_data      = optional(bool, false)
+    no_data_timeframe   = optional(number)
+    renotify_interval   = optional(number)
+    include_tags        = optional(bool, true)
+    require_full_window = optional(bool, true)
+    evaluation_delay    = optional(number)
     thresholds = optional(object({
-      critical           = optional(number)
-      warning            = optional(number)
-      critical_recovery  = optional(number)
-      warning_recovery   = optional(number)
-      ok                 = optional(number)
+      critical          = optional(number)
+      warning           = optional(number)
+      critical_recovery = optional(number)
+      warning_recovery  = optional(number)
+      ok                = optional(number)
     }), null)
   }))
   default = []
@@ -59,22 +59,22 @@ List of Datadog synthetics tests (API HTTP).
 - retry { count, interval(ms) }
 EOT
   type = list(object({
-    name       = string
-    type       = string
-    subtype    = string
+    name            = string
+    type            = string
+    subtype         = string
     request_url     = string
     request_method  = string
     request_headers = optional(map(string), {})
-    assertions      = optional(list(object({
+    assertions = optional(list(object({
       type     = string
       operator = string
       target   = any
     })), [])
-    locations          = list(string)
-    tags               = optional(list(string), [])
-    tick_every         = optional(number, 300)
-    min_location_failed= optional(number, 1)
-    follow_redirects   = optional(bool, true)
+    locations           = list(string)
+    tags                = optional(list(string), [])
+    tick_every          = optional(number, 300)
+    min_location_failed = optional(number, 1)
+    follow_redirects    = optional(bool, true)
     retry = optional(object({
       count    = number
       interval = number
@@ -94,35 +94,45 @@ variable "log_indexes" {
   default = []
 }
 
+# --- logs: metrics ---
 variable "log_metrics" {
   description = "List of log-based metrics."
   type = list(object({
-    name                = string
-    filter_query        = optional(string)
-    compute_aggregation = string                # e.g., count, distribution
-    group_bys           = optional(list(object({
-      path = string
+    name         = string
+    filter_query = optional(string)
+
+    # compute
+    compute_aggregation = string           # "count" | "distribution"
+    compute_path        = optional(string) # required for "distribution"
+    include_percentiles = optional(bool)
+
+    # groups
+    group_bys = optional(list(object({
+      path     = string
+      tag_name = string
     })), [])
   }))
   default = []
 }
 
+# --- aws integration (classic resource) ---
 variable "aws_integration" {
-  description = "Optional Datadog↔AWS integration config (Datadog side only)."
+  description = "Datadog ↔ AWS (classic integration resource)."
   type = object({
-    enabled     = bool
-    account_id  = optional(string)
-    role_name   = optional(string)
-    filter_tags = optional(list(string), [])
-    host_tags   = optional(list(string), [])
-    # NOTE: You must create/configure the AWS IAM role separately (trust Datadog, external ID).
+    enabled                          = bool
+    account_id                       = optional(string)
+    role_name                        = optional(string)
+    filter_tags                      = optional(list(string), [])
+    host_tags                        = optional(list(string), [])
+    account_specific_namespace_rules = optional(map(bool))
   })
   default = {
-    enabled     = false
-    account_id  = null
-    role_name   = null
-    filter_tags = []
-    host_tags   = []
+    enabled                          = false
+    account_id                       = null
+    role_name                        = null
+    filter_tags                      = []
+    host_tags                        = []
+    account_specific_namespace_rules = null
   }
 }
 
@@ -140,73 +150,45 @@ variable "synthetics_private_locations" {
   default = []
 }
 
+# --- synthetics: globals ---
 variable "synthetics_global_variables" {
-  description = "Synthetics global variables (either a static value or parsed from a test)."
+  description = "Synthetics global variables (static values only)."
   type = list(object({
     name        = string
     description = optional(string)
-    value       = optional(string, null)
-
-    # Parse from test (optional)
-    parse_test = optional(object({
-      id    = string
-      type  = string         # "raw" | "json_path" | "regex" | "x_path"
-      value = optional(string)
-    }))
+    value       = optional(string)
+    secure      = optional(bool)
+    tags        = optional(list(string))
   }))
   default = []
-  sensitive = false
 }
 
+# --- synthetics: browser tests (no steps for now) ---
 variable "synthetics_browser_tests" {
-  description = "Browser Synthetics tests."
+  description = "Browser Synthetics tests (basic: start URL, schedule, locations)."
   type = list(object({
-    name        = string
-    start_url   = string
-    locations   = optional(list(string))
-    tags        = optional(list(string))
-    status      = optional(string)               # "live" | "paused"
-    tick_every  = optional(number)               # seconds (default 900)
-    device_ids  = optional(list(string))         # e.g., ["laptop_large"]
+    name                = string
+    start_url           = string
+    locations           = optional(list(string))
+    tags                = optional(list(string))
+    status              = optional(string) # "live" | "paused"
+    tick_every          = optional(number)
+    min_location_failed = optional(number)
+    device_ids          = optional(list(string)) # e.g., ["laptop_large"]
 
     retry = optional(object({
       count    = optional(number)
       interval = optional(number)
     }))
 
-    monitor_options = optional(object({
-      renotify_interval   = optional(number)
-      escalation_message  = optional(string)
-      notify_audit        = optional(bool)
-      notify_no_data      = optional(bool)
-      no_data_timeframe   = optional(number)
-      include_tags        = optional(bool)
-      require_full_window = optional(bool)
-      new_group_delay     = optional(number)
-      evaluation_delay    = optional(number)
-      timeout_h           = optional(number)
-    }))
-
-    # Local/browser variables
+    # Optional config variables
     config_variables = optional(list(object({
-      type    = string                 # "text" | "email" | "global" | ...
+      type    = string
       name    = string
-      id      = optional(string)       # required if type="global"
-      value   = optional(string)
+      id      = optional(string) # required if type="global"
       secure  = optional(bool)
       example = optional(string)
       pattern = optional(string)
-    })))
-
-    # Steps (Datadog's browser_step schema)
-    steps = optional(list(object({
-      type          = string
-      name          = optional(string)
-      params        = optional(map(any))
-      allow_failure = optional(bool)
-      is_critical   = optional(bool)
-      timeout       = optional(number)
-      no_screenshot = optional(bool)
     })))
   }))
   default = []
@@ -221,13 +203,13 @@ variable "legacy_downtimes" {
   description = "Simple downtimes using legacy resource (epoch start/end)."
   type = list(object({
     name    = string
-    scope   = list(string)            # e.g., ["*"] or ["env:prod"]
+    scope   = list(string) # e.g., ["*"] or ["env:prod"]
     message = optional(string)
-    start   = number                  # epoch secs
-    end     = optional(number)        # epoch secs
+    start   = number           # epoch secs
+    end     = optional(number) # epoch secs
 
     recurrence = optional(object({
-      type              = string      # "days" | "weeks" | "months" | "years"
+      type              = string # "days" | "weeks" | "months" | "years"
       period            = number
       week_days         = optional(list(string))
       until_date        = optional(number)
@@ -240,10 +222,10 @@ variable "legacy_downtimes" {
 variable "monitor_config_policies" {
   description = "Optional monitor config tag policies (org-level enforcement)."
   type = list(object({
-    name              = string
-    tag_key           = string
-    tag_key_required  = optional(bool)
-    valid_tag_values  = optional(list(string))
+    name             = string
+    tag_key          = string
+    tag_key_required = optional(bool)
+    valid_tag_values = optional(list(string))
   }))
   default = []
 }
@@ -256,7 +238,7 @@ variable "slos" {
   description = "Service Level Objectives."
   type = list(object({
     name        = string
-    type        = string                       # "metric" | "monitor"
+    type        = string # "metric" | "monitor"
     description = optional(string)
     tags        = optional(list(string))
 
@@ -270,7 +252,7 @@ variable "slos" {
     }))
 
     thresholds = list(object({
-      timeframe = string                      # "7d" | "30d" | "90d" | "week" | "month" | ...
+      timeframe = string # "7d" | "30d" | "90d" | "week" | "month" | ...
       target    = number
       warning   = optional(number)
     }))
@@ -290,7 +272,7 @@ variable "metric_metadata" {
     unit            = optional(string)
     short_name      = optional(string)
     per_unit        = optional(string)
-    type            = optional(string)         # "count" | "gauge" | "rate" | "distribution" (updates limited)
+    type            = optional(string) # "count" | "gauge" | "rate" | "distribution" (updates limited)
     statsd_interval = optional(number)
   }))
   default = []
@@ -300,12 +282,12 @@ variable "metric_tag_config" {
   description = "Metric tag configurations (queryable tag keys, aggregations, percentiles)."
   type = list(object({
     metric_name         = string
-    metric_type         = string               # "gauge" | "count" | "rate" | "distribution"
+    metric_type         = string # "gauge" | "count" | "rate" | "distribution"
     tags                = optional(list(string))
     include_percentiles = optional(bool)
     exclude_tags_mode   = optional(bool)
-    aggregations        = optional(list(object({
-      time  = optional(string)                 # e.g., "avg","sum","min","max"
+    aggregations = optional(list(object({
+      time  = optional(string) # e.g., "avg","sum","min","max"
       space = optional(string)
     })))
   }))
@@ -316,41 +298,30 @@ variable "metric_tag_config" {
 # LOGS: Archives + Pipelines
 ############################################################
 
+# --- logs: archives ---
 variable "logs_archives" {
-  description = "Log archives (S3 / Azure / GCS). Supply exactly one provider block per archive."
+  description = "Log archives (S3 and/or Azure)."
   type = list(object({
     name  = string
     query = optional(string)
 
-    include_tags                  = optional(bool)
+    include_tags                    = optional(bool)
     rehydration_max_scan_size_in_gb = optional(number)
-    rehydration_tags              = optional(list(string))
+    rehydration_tags                = optional(list(string))
 
     s3 = optional(object({
-      bucket       = string
-      path         = optional(string)
-      account_id   = optional(string)
-      role_name    = optional(string)
-      iam_role_arn = optional(string)
-      kms_key_arn  = optional(string)
-      storage_class = optional(string)
+      bucket     = string
+      path       = optional(string)
+      account_id = string
+      role_name  = string
     }))
 
     azure = optional(object({
       container       = string
       storage_account = string
+      client_id       = string
       tenant_id       = optional(string)
-      client_id       = optional(string)
-      client_secret   = optional(string)
       path            = optional(string)
-    }))
-
-    gcs = optional(object({
-      bucket       = string
-      path         = optional(string)
-      client_email = optional(string)
-      project_id   = optional(string)
-      private_key  = optional(string)
     }))
   }))
   default = []
@@ -375,7 +346,7 @@ variable "logs_custom_pipelines" {
 
     # A loose, typed bag for common processors; extend as needed per Datadog docs
     processors = optional(list(object({
-      type       = string                      # "grok-parser" | "date-remapper" | "status-remapper" | "attribute-remapper" | ...
+      type       = string # "grok-parser" | "date-remapper" | "status-remapper" | "attribute-remapper" | ...
       name       = optional(string)
       is_enabled = optional(bool)
 
@@ -408,9 +379,9 @@ variable "logs_custom_pipelines" {
   default = []
 }
 
-# Optional: enforce a global pipeline order (names must match logs_custom_pipelines[*].name)
+# --- logs: pipeline order (IDs, not names) ---
 variable "logs_pipeline_order" {
-  description = "Optional explicit ordering of custom pipelines by name (top to bottom)."
+  description = "Explicit order of pipelines by ID (top to bottom)."
   type        = list(string)
   default     = []
 }
@@ -422,7 +393,7 @@ variable "logs_pipeline_order" {
 variable "dashboard_lists" {
   description = "Dashboard lists and (optionally) the dashboards to include."
   type = list(object({
-    name       = string
+    name = string
     dash_items = optional(list(object({
       dash_id = string           # dashboard id (from datadog_dashboard or datadog_dashboard_json resource)
       type    = optional(string) # optional/ignored by Datadog in many cases

@@ -14,10 +14,10 @@ module "dd" {
   source = "../.."
 
   monitors = [{
-    name    = "High CPU"
-    type    = "query alert"
-    query   = "avg(last_5m):avg:aws.ec2.cpuutilization{env:dev} > 80"
-    message = "CPU high on env:dev. @pagerduty"
+    name       = "High CPU"
+    type       = "query alert"
+    query      = "avg(last_5m):avg:aws.ec2.cpuutilization{env:dev} > 80"
+    message    = "CPU high on env:dev. @pagerduty"
     thresholds = { critical = 80, warning = 70 }
   }]
 
@@ -30,7 +30,7 @@ module "dd" {
           definition = {
             type = "timeseries"
             requests = [{
-              queries = [{ data_source = "metrics", name = "q1", query = "avg:aws.ec2.cpuutilization{*}" }]
+              queries      = [{ data_source = "metrics", name = "q1", query = "avg:aws.ec2.cpuutilization{*}" }]
               display_type = "line"
             }]
             title = "EC2 CPU"
@@ -41,24 +41,24 @@ module "dd" {
   }
 
   synthetics = [{
-    name        = "Homepage"
-    type        = "api"
-    subtype     = "http"
-    request_url = "https://example.com/"
+    name           = "Homepage"
+    type           = "api"
+    subtype        = "http"
+    request_url    = "https://example.com/"
     request_method = "GET"
-    locations   = ["aws:us-east-1"]
-    assertions  = [{ type = "statusCode", operator = "is", target = 200 }]
+    locations      = ["aws:us-east-1"]
+    assertions     = [{ type = "statusCode", operator = "is", target = 200 }]
   }]
 
   log_indexes = [{
-    name = "dev-index"
-    filter_query = "env:dev"
+    name           = "dev-index"
+    filter_query   = "env:dev"
     retention_days = 7
   }]
 
   log_metrics = [{
-    name = "web.5xx.count"
-    filter_query = "service:web status:5xx"
+    name                = "web.5xx.count"
+    filter_query        = "service:web status:5xx"
     compute_aggregation = "count"
   }]
 
