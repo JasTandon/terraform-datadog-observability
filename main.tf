@@ -258,19 +258,19 @@ resource "datadog_synthetics_test" "browser" {
 resource "datadog_downtime" "this" {
   for_each = { for d in var.legacy_downtimes : d.name => d }
 
-  scope     = d.scope for d in [each.value]... # keep terraform fmt simple
-  message   = try(each.value.message, null)
-  start     = each.value.start
-  end       = try(each.value.end, null)
+  scope   = each.value.scope              # list(string), e.g. ["env:prod"] or ["*"]
+  message = try(each.value.message, null)
+  start   = each.value.start              # epoch seconds
+  end     = try(each.value.end, null)     # epoch seconds (optional)
 
   dynamic "recurrence" {
     for_each = try(each.value.recurrence) != null ? [each.value.recurrence] : []
     content {
-      type      = recurrence.value.type      # "days" | "weeks" | "months" | "years"
-      period    = recurrence.value.period
-      week_days = try(recurrence.value.week_days, null)
-      until_date = try(recurrence.value.until_date, null)
-      until_occurrences = try(recurrence.value.until_occurrences, null)
+      type               = recurrence.value.type        # "days" | "weeks" | "months" | "years"
+      period             = recurrence.value.period
+      week_days          = try(recurrence.value.week_days, null)
+      until_date         = try(recurrence.value.until_date, null)
+      until_occurrences  = try(recurrence.value.until_occurrences, null)
     }
   }
 }
