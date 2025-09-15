@@ -129,12 +129,11 @@ resource "datadog_logs_metric" "this" {
 ########################################
 # Optional: Datadog ↔ AWS Integration (Datadog side)
 ########################################
-resource "datadog_integration_aws" "this" {
-  count      = var.aws_integration.enabled ? 1 : 0
+resource "datadog_integration_aws_account" "this" {
   account_id = var.aws_integration.account_id
   role_name  = var.aws_integration.role_name
 
-  # Optional tag wiring
+  # optional fields vary by provider version (regions, namespace rules, etc.)
   filter_tags = try(var.aws_integration.filter_tags, [])
   host_tags   = try(var.aws_integration.host_tags, [])
 }
